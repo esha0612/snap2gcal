@@ -1,7 +1,15 @@
 import { Button } from "./ui/button";
 import { Upload, Sparkles } from "lucide-react";
+import { GoogleLogin } from "@react-oauth/google";
+import { jwtDecode } from "jwt-decode";
 
 export function Hero() {
+  const handleSuccess = (credentialResponse: any) => {
+    const user: any = jwtDecode(credentialResponse.credential);
+    console.log("Logged in as:", user.name, user.email);
+    // TODO: save user to state/context
+  };
+
   return (
     <div className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
@@ -27,6 +35,7 @@ export function Hero() {
               <Upload className="mr-2 h-5 w-5" />
               Upload Screenshot
             </Button>
+            <GoogleLogin onSuccess={handleSuccess} onError={() => console.log("Login Failed")} />
           </div>
           
           <div className="mt-10 flex items-center justify-center gap-x-6 text-sm text-gray-500">
