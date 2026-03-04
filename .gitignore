@@ -1,0 +1,4 @@
+# Credentials and tokens
+client_secret_*.json
+token.json
+credentials.json
