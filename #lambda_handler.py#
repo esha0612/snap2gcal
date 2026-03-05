@@ -1,14 +1,11 @@
 import os
-import re
 import json
 import base64
 import hashlib
-import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
 
 import boto3
-from botocore.config import Config
 
 # Native libs you must package in a container/layer
 import faiss  # faiss-cpu
@@ -25,8 +22,6 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 S3_BUCKET = os.environ["RAG_BUCKET"]
 INDEX_PREFIX = os.environ.get("INDEX_PREFIX", "index/")
-UPLOAD_PREFIX = os.environ.get("UPLOAD_PREFIX", "uploads/")
-PRESIGNED_EXPIRY = int(os.environ.get("PRESIGNED_EXPIRY", "3600"))  # seconds
 EMBED_MODEL_ID = os.environ["EMBED_MODEL_ID"]
 GEN_MODEL_ID = os.environ["GEN_MODEL_ID"]
 
@@ -42,11 +37,7 @@ LOCAL_INDEX_PATH = "/tmp/faiss.index"
 LOCAL_META_PATH = "/tmp/meta.jsonl"
 LOCAL_DOC_PATH = "/tmp/upload.pdf"
 
-s3 = boto3.client(
-    "s3",
-    region_name=AWS_REGION,
-    config=Config(signature_version="s3v4"),
-)
+s3 = boto3.client("s3", region_name=AWS_REGION)
 brt = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 
@@ -238,89 +229,6 @@ def generate_answer(question: str, contexts: List[Dict[str, Any]]) -> Dict[str, 
         }
 
 
-def generate_calendar_event(question: str, contexts: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Extract calendar event data from context and return as JSON."""
-    ctx_lines = []
-    for i, c in enumerate(contexts):
-        ctx_lines.append(
-            f"[{i+1}] SOURCE={c.get('source','')} CHUNK_ID={c.get('chunk_id','')} "
-            f"MODALITY={c.get('modality','text')} PAGE={c.get('page')}\n"
-            f"{c.get('text','')}\n"
-        )
-    ctx_block = "\n".join(ctx_lines)
-
-    user_prompt = (
-        "You are an expert at extracting event information from documents and images.\n"
-        "Extract calendar event details from the provided CONTEXT. Use your best judgment to infer missing information.\n"
-        "Return STRICT JSON with the following schema:\n"
-        "{\n"
-        "  \"title\": \"event name/title (string, required)\",\n"
-        "  \"date\": \"date in ISO 8601 format or human readable format (string, required)\",\n"
-        "  \"time\": \"time range or start time, e.g. '6:00 PM - 9:00 PM' (string, optional)\",\n"
-        "  \"start_time\": \"start time in HH:MM format (string, optional)\",\n"
-        "  \"end_time\": \"end time in HH:MM format (string, optional)\",\n"
-        "  \"location\": \"venue or location name (string, optional)\",\n"
-        "  \"description\": \"event description and details (string, optional)\",\n"
-        "  \"notes\": \"additional notes, dress code, requirements (string, optional)\",\n"
-        "  \"extracted_from\": \"source page or modality where info was found (string, optional)\"\n"
-        "}\n\n"
-        "Important instructions:\n"
-        "- Always extract a title and date if possible\n"
-        "- Resolve relative dates (e.g., 'next Friday') to actual dates when possible\n"
-        "- Combine multiple pieces of information found in context\n"
-        "- Return ONLY valid JSON, no additional text\n"
-        "- If required fields are missing, return them as null\n\n"
-        f"QUESTION:\n{question}\n\n"
-        f"CONTEXT:\n{ctx_block}\n"
-    )
-
-    request_body = {
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"text": user_prompt}
-                ]
-            }
-        ],
-        "inferenceConfig": {
-            "maxTokens": 1000,
-            "temperature": 0.1
-        }
-    }
-
-    r = brt.invoke_model(
-        modelId=GEN_MODEL_ID,
-        body=json.dumps(request_body).encode("utf-8"),
-        accept="application/json",
-        contentType="application/json",
-    )
-
-    out = json.loads(r["body"].read())
-
-    # Nova Lite response format
-    content_blocks = out["output"]["message"]["content"]
-    text_block = next((b for b in content_blocks if "text" in b), None)
-    text_out = text_block["text"] if text_block else None
-
-    if not text_out:
-        return {"error": "Failed to extract calendar event", "raw_model_response": out}
-
-    try:
-        result = json.loads(text_out)
-        # Ensure required fields
-        if "title" not in result:
-            result["title"] = None
-        if "date" not in result:
-            result["date"] = None
-        return result
-    except Exception as e:
-        return {
-            "error": f"Failed to parse calendar event JSON: {str(e)}",
-            "raw_response": text_out
-        }
-
-
 # =========================
 # FAISS Index Handling
 # =========================
@@ -488,41 +396,8 @@ def handle_ingest(body: Dict[str, Any]) -> Dict[str, Any]:
     })
 
 
-def _sanitize_filename(name: str) -> str:
-    """Keep alphanumeric, dots, hyphens, underscores; collapse repeated dots."""
-    base = re.sub(r"[^\w.\-]", "_", (name or "file").strip())
-    return re.sub(r"\.+", ".", base).strip(".") or "file"
-
-def handle_upload_url(body: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Return a presigned PUT URL so the client can upload a file directly to S3.
-    Body: { "filename": "doc.pdf", "content_type": "application/pdf" }
-    Returns: { "upload_url": "...", "s3_key": "uploads/..." }
-    """
-    filename = (body.get("filename") or "").strip()
-    if not filename:
-        return _resp(400, {"error": "Missing filename"})
-
-    content_type = (body.get("content_type") or "application/octet-stream").strip()
-    safe_name = _sanitize_filename(filename)
-    s3_key = f"{UPLOAD_PREFIX}{uuid.uuid4().hex}_{safe_name}"
-
-    params = {"Bucket": S3_BUCKET, "Key": s3_key, "ContentType": content_type}
-    upload_url = s3.generate_presigned_url(
-        "put_object",
-        Params=params,
-        ExpiresIn=PRESIGNED_EXPIRY,
-    )
-
-    return _resp(200, {
-        "upload_url": upload_url,
-        "s3_key": s3_key,
-        "content_type": content_type,
-    })
-
-
 def handle_query(body: Dict[str, Any]) -> Dict[str, Any]:
-    top_k = int(body.get("top_k", TOP_K))
+    top_k = t(body.get("top_k", TOP_K))
 
     if not (s3_key_exists(S3_BUCKET, index_s3_key()) and s3_key_exists(S3_BUCKET, meta_s3_key())):
         return _resp(400, {"error": "No index found. Run /ingest first."})
@@ -593,72 +468,6 @@ def handle_query(body: Dict[str, Any]) -> Dict[str, Any]:
         },
     })
 
-
-def handle_query_calendar(body: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract calendar event data from uploaded documents using RAG."""
-    top_k = int(body.get("top_k", TOP_K))
-
-    if not (s3_key_exists(S3_BUCKET, index_s3_key()) and s3_key_exists(S3_BUCKET, meta_s3_key())):
-        return _resp(400, {"error": "No index found. Run /ingest first."})
-
-    # Load artifacts
-    download_s3_file(S3_BUCKET, index_s3_key(), LOCAL_INDEX_PATH)
-    download_s3_file(S3_BUCKET, meta_s3_key(), LOCAL_META_PATH)
-    idx = faiss.read_index(LOCAL_INDEX_PATH)
-    meta_rows = load_meta_rows()
-    meta_by_id = {int(r["faiss_id"]): r for r in meta_rows if "faiss_id" in r}
-
-    # Use a generic calendar event extraction query
-    qtext = body.get("text", "Extract all calendar event information including date, time, location, and title.")
-
-    q_vec = embed_text(qtext)
-    ids, dists = search_vectors(idx, q_vec, top_k=top_k)
-
-    contexts = []
-    seen = set()
-    for faiss_id, dist in zip(ids, dists):
-        if faiss_id is None or faiss_id < 0:
-            continue
-        if faiss_id in seen:
-            continue
-        seen.add(faiss_id)
-
-        row = meta_by_id.get(faiss_id)
-        if not row:
-            continue
-
-        contexts.append({
-            "faiss_id": faiss_id,
-            "distance": dist,
-            "chunk_id": row.get("chunk_id"),
-            "source": row.get("source"),
-            "modality": row.get("modality"),
-            "page": row.get("page"),
-            "text": row.get("text"),
-        })
-
-    if not contexts:
-        return _resp(400, {"error": "No relevant content found in the index. Please ensure the document has been ingested."})
-
-    # Extract calendar event from contexts
-    calendar_event = generate_calendar_event(qtext, contexts)
-
-    return _resp(200, {
-        "event": calendar_event,
-        "retrieval": {
-            "top_k": top_k,
-            "matches": [
-                {
-                    "chunk_id": c["chunk_id"],
-                    "source": c["source"],
-                    "page": c.get("page"),
-                    "modality": c.get("modality"),
-                    "distance": c["distance"],
-                } for c in contexts
-            ],
-        },
-    })
-
 # =========================
 # Lambda entrypoint + routing
 # =========================
@@ -685,13 +494,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if method.upper() != "POST":
         return _resp(405, {"error": "Use POST"})
 
-    if path.endswith("/upload-url"):
-        return handle_upload_url(body)
     if path.endswith("/ingest"):
         return handle_ingest(body)
     if path.endswith("/query"):
         return handle_query(body)
-    if path.endswith("/query-calendar"):
-        return handle_query_calendar(body)
 
-    return _resp(404, {"error": f"Unknown route: {method} {path}", "routes": ["/upload-url", "/ingest", "/query", "/query-calendar"]})
+    return _resp(404, {"error": f"Unknown route: {method} {path}", "routes": ["/ingest", "/query"]})

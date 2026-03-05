@@ -9,6 +9,17 @@ import { Upload, Image as ImageIcon, Calendar, MapPin, Clock, FileText, Edit2, C
 
 const API_BASE = (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL ?? "";
 
+interface CalendarEvent {
+  title: string | null;
+  date: string | null;
+  time?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  location?: string | null;
+  description?: string | null;
+  notes?: string | null;
+}
+
 export function DemoSection() {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [uploadedS3Key, setUploadedS3Key] = useState<string | null>(null);
@@ -22,7 +33,7 @@ export function DemoSection() {
   const [isEditing, setIsEditing] = useState(false);
   
   // Event details state
-  const [eventDetails, setEventDetails] = useState({
+  const [eventDetails, setEventDetails] = useState<CalendarEvent>({
     title: "Tech Startup Networking Mixer",
     date: "Friday, March 14, 2026",
     time: "6:00 PM - 9:00 PM",
@@ -115,7 +126,8 @@ export function DemoSection() {
     setShowResult(false);
 
     try {
-      const res = await fetch(`${API_BASE.replace(/\/$/, "")}/ingest`, {
+      // Step 1: Ingest the PDF
+      const ingestRes = await fetch(`${API_BASE.replace(/\/$/, "")}/ingest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -124,9 +136,43 @@ export function DemoSection() {
         }),
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error((data as any).error || `Processing failed: ${res.status}`);
+      const ingestData = await ingestRes.json().catch(() => ({}));
+      if (!ingestRes.ok) {
+        throw new Error((ingestData as any).error || `Processing failed: ${ingestRes.status}`);
+      }
+
+      // Step 2: Query for calendar event details
+      const queryRes = await fetch(`${API_BASE.replace(/\/$/, "")}/query-calendar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: "Extract all calendar event information including event title, date, time, location, and any additional notes or descriptions.",
+          top_k: 10,
+        }),
+      });
+
+      const queryData = await queryRes.json().catch(() => ({}));
+      if (!queryRes.ok) {
+        throw new Error((queryData as any).error || `Query failed: ${queryRes.status}`);
+      }
+
+      // Step 3: Update event details from the extracted data
+      if (queryData.event && typeof queryData.event === 'object') {
+        const extractedEvent = queryData.event;
+        
+        // Map extracted fields to our format
+        const updatedDetails: CalendarEvent = {
+          title: extractedEvent.title || eventDetails.title || null,
+          date: extractedEvent.date || eventDetails.date || null,
+          time: extractedEvent.time || eventDetails.time,
+          start_time: extractedEvent.start_time,
+          end_time: extractedEvent.end_time,
+          location: extractedEvent.location || eventDetails.location,
+          description: extractedEvent.description,
+          notes: extractedEvent.notes || eventDetails.notes,
+        };
+        
+        setEventDetails(updatedDetails);
       }
 
       setShowResult(true);
@@ -287,12 +333,12 @@ export function DemoSection() {
                           <p className="text-sm font-medium text-gray-500 mb-1">Event Title</p>
                           {isEditing ? (
                             <Input
-                              value={eventDetails.title}
+                              value={eventDetails.title || ""}
                               onChange={(e) => setEventDetails({ ...eventDetails, title: e.target.value })}
                               className="font-semibold"
                             />
                           ) : (
-                            <p className="text-lg font-semibold text-gray-900">{eventDetails.title}</p>
+                            <p className="text-lg font-semibold text-gray-900">{eventDetails.title || "No title extracted"}</p>
                           )}
                         </div>
                       </div>
@@ -305,14 +351,14 @@ export function DemoSection() {
                           <p className="text-sm font-medium text-gray-500 mb-1">Date</p>
                           {isEditing ? (
                             <Input
-                              value={eventDetails.date}
+                              value={eventDetails.date || ""}
                               onChange={(e) => setEventDetails({ ...eventDetails, date: e.target.value })}
                               className="font-semibold"
                             />
                           ) : (
                             <>
-                              <p className="text-lg font-semibold text-gray-900">{eventDetails.date}</p>
-                              <p className="text-sm text-blue-600 mt-1">✓ Resolved from "next Friday"</p>
+                              <p className="text-lg font-semibold text-gray-900">{eventDetails.date || "No date found"}</p>
+                              {eventDetails.date && <p className="text-sm text-blue-600 mt-1">✓ AI extracted</p>}
                             </>
                           )}
                         </div>
@@ -326,12 +372,12 @@ export function DemoSection() {
                           <p className="text-sm font-medium text-gray-500 mb-1">Time</p>
                           {isEditing ? (
                             <Input
-                              value={eventDetails.time}
+                              value={eventDetails.time || ""}
                               onChange={(e) => setEventDetails({ ...eventDetails, time: e.target.value })}
                               className="font-semibold"
                             />
                           ) : (
-                            <p className="text-lg font-semibold text-gray-900">{eventDetails.time}</p>
+                            <p className="text-lg font-semibold text-gray-900">{eventDetails.time || "No time found"}</p>
                           )}
                         </div>
                       </div>
@@ -344,12 +390,12 @@ export function DemoSection() {
                           <p className="text-sm font-medium text-gray-500 mb-1">Location</p>
                           {isEditing ? (
                             <Input
-                              value={eventDetails.location}
+                              value={eventDetails.location || ""}
                               onChange={(e) => setEventDetails({ ...eventDetails, location: e.target.value })}
                               className="font-semibold"
                             />
                           ) : (
-                            <p className="text-lg font-semibold text-gray-900">{eventDetails.location}</p>
+                            <p className="text-lg font-semibold text-gray-900">{eventDetails.location || "No location found"}</p>
                           )}
                         </div>
                       </div>
@@ -362,12 +408,12 @@ export function DemoSection() {
                           <p className="text-sm font-medium text-gray-500 mb-1">Notes</p>
                           {isEditing ? (
                             <Textarea
-                              value={eventDetails.notes}
+                              value={eventDetails.notes || ""}
                               onChange={(e) => setEventDetails({ ...eventDetails, notes: e.target.value })}
                               className="min-h-[80px]"
                             />
                           ) : (
-                            <p className="text-gray-900">{eventDetails.notes}</p>
+                            <p className="text-gray-900">{eventDetails.notes || "No additional notes"}</p>
                           )}
                         </div>
                       </div>
