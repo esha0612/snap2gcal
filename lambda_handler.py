@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
 
 import boto3
+from google_api_calendar import create_event_from_schema
 
 # Native libs you must package in a container/layer
 import faiss  # faiss-cpu
@@ -396,6 +397,44 @@ def handle_ingest(body: Dict[str, Any]) -> Dict[str, Any]:
     })
 
 
+def handle_create_event(body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle calendar event creation from schema.
+    Expects event data matching Google Calendar schema:
+    {
+        "summary": "Event title",
+        "start": {"dateTime": "...", "timeZone": "..."},
+        "end": {"dateTime": "...", "timeZone": "..."}
+    }
+    """
+    try:
+        # Validate required fields
+        if not body.get('summary'):
+            return _resp(400, {"error": "Missing 'summary' field"})
+        if not body.get('start'):
+            return _resp(400, {"error": "Missing 'start' field"})
+        if not body.get('end'):
+            return _resp(400, {"error": "Missing 'end' field"})
+        
+        # Create the event using google_api_calendar
+        result = create_event_from_schema(body)
+        
+        if result:
+            return _resp(201, {
+                "message": "Event created successfully",
+                "eventId": result.get('id'),
+                "htmlLink": result.get('htmlLink'),
+                "summary": result.get('summary'),
+                "start": result.get('start'),
+                "end": result.get('end')
+            })
+        else:
+            return _resp(400, {"error": "Failed to create event - validation failed"})
+            
+    except Exception as e:
+        return _resp(500, {"error": f"Exception: {str(e)}"})
+
+
 def handle_query(body: Dict[str, Any]) -> Dict[str, Any]:
     top_k = int(body.get("top_k", TOP_K))
 
@@ -498,5 +537,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return handle_ingest(body)
     if path.endswith("/query"):
         return handle_query(body)
+    if path.endswith("/create-event"):
+        return handle_create_event(body)
 
-    return _resp(404, {"error": f"Unknown route: {method} {path}", "routes": ["/ingest", "/query"]})
+    return _resp(404, {"error": f"Unknown route: {method} {path}", "routes": ["/ingest", "/query", "/create-event"]})
