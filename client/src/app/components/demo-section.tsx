@@ -34,11 +34,11 @@ export function DemoSection() {
   
   // Event details state
   const [eventDetails, setEventDetails] = useState<CalendarEvent>({
-    title: "Tech Startup Networking Mixer",
-    date: "Friday, March 14, 2026",
-    time: "6:00 PM - 9:00 PM",
-    location: "Innovation Hub, Downtown",
-    notes: "Bring business cards. Casual dress code."
+    title: "Architect the Cloud",
+    date: "Thursday, March 5, 2026",
+    time: "5:00 PM - 8:00 PM",
+    location: "Cohen Multipurpose Room 134",
+    notes: "AWS Cloud Club"
   });
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
