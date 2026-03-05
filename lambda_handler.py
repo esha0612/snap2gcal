@@ -56,7 +56,12 @@ brt = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS"
+        },
         "body": json.dumps(body),
     }
 
@@ -681,6 +686,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         body = json.loads(body_str) if isinstance(body_str, str) else (body_str or {})
     except Exception:
         return _resp(400, {"error": "Invalid JSON body"})
+
+    if method.upper() == "OPTIONS":
+        return _resp(200, {})
 
     if method.upper() != "POST":
         return _resp(405, {"error": "Use POST"})
