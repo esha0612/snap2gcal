@@ -30,7 +30,7 @@ def get_authenticated_service(): #Authenticate and return Google Calendar API se
   # If no valid credentials, prompt user to log in
   if not creds or not creds.valid:
     flow = InstalledAppFlow.from_client_secrets_file(
-        "client_secret_391561546097-gr6a0gq4bjbrodcf6cue4l4jrpj1ddte.apps.googleusercontent.com.json", SCOPES
+        "client_secret_819478237464-d6v51818ev54jm1flti9idoai2u8gr8o.apps.googleusercontent.com.json", SCOPES
     )
     creds = flow.run_local_server(port=8080)
     print("Initial authentication complete")
