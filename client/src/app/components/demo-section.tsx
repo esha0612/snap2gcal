@@ -203,7 +203,7 @@ export function DemoSection() {
   const hasUpload = !!uploadedS3Key || !!uploadedImage;
 
   return (
-    <div className="bg-white py-24 sm:py-32">
+    <div id="demo" className="bg-white py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center mb-16">
           <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
@@ -229,7 +229,7 @@ export function DemoSection() {
                 {isUploading ? (
                   <div className="flex flex-col items-center gap-3 py-8">
                     <Loader2 className="h-12 w-12 text-blue-600 animate-spin" />
-                    <p className="text-gray-600">Uploading to S3...</p>
+                    <p className="text-gray-600">Uploading...</p>
                   </div>
                 ) : hasUpload ? (
                   <>
@@ -244,7 +244,7 @@ export function DemoSection() {
                         <div className="h-64 flex flex-col items-center justify-center rounded-lg bg-gray-100 border border-gray-200">
                           <FileUp className="h-16 w-16 text-gray-500 mb-2" />
                           <p className="text-sm font-medium text-gray-700 truncate max-w-full px-4">{uploadedFileName}</p>
-                          <p className="text-xs text-gray-500 mt-1">Uploaded to S3</p>
+                          <p className="text-xs text-gray-500 mt-1">Uploaded</p>
                         </div>
                       ) : null}
                       <button
@@ -254,11 +254,6 @@ export function DemoSection() {
                         <X className="h-4 w-4" />
                       </button>
                     </div>
-                    {uploadedS3Key && (
-                      <p className="text-xs text-gray-500 mb-3 font-mono truncate max-w-full" title={uploadedS3Key}>
-                        S3: {uploadedS3Key}
-                      </p>
-                    )}
                     <Button onClick={handleProcess} disabled={isProcessing} className="bg-blue-600 hover:bg-blue-700">
                       <Upload className="mr-2 h-4 w-4" />
                       {isProcessing ? "Processing..." : "Process Screenshot"}
