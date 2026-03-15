@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+client_secret_819478237464-d6v51818ev54jm1flti9idoai2u8gr8o.apps.googleusercontent.com.json
 # Distribution / packaging
 .Python
 build/
@@ -31,6 +31,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+node_modules/
+dist/
 
 # Installer logs
 pip-log.txt
