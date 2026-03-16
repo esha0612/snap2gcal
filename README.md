@@ -23,7 +23,7 @@ Snap2GCal lets you turn screenshots and PDFs into Google Calendar events in a fe
     - `POST /query-calendar` – extract calendar event fields
 
 - **Backend (`lambda_handler.py`)**
-  - AWS Lambda (container image) + Bedrock
+  - AWS Lambda (container image) + Nova 2 Lite for image detail extraction
   - Ingests PDFs from S3, chunks + embeds them into a FAISS index stored back in S3.
   - Handles `/ingest`, `/query`, and `/query-calendar` routes for RAG and event extraction.
 
